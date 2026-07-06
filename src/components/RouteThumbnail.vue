@@ -15,7 +15,7 @@ let flashTimer = null, flashCount = 0
 
 // zoom & pan state
 const zoom = ref(1), panX = ref(0), panY = ref(0)
-let dragging = false, dragStart = { x: 0, y: 0 }, panStart = { x: 0, y: 0 }
+let dragging = false, lastX = 0, lastY = 0
 
 function zoomIn() { zoom.value = Math.min(20, zoom.value * 2) }
 function zoomOut() { zoom.value = Math.max(1, zoom.value / 2); if (zoom.value <= 1) { panX.value = 0; panY.value = 0 } }
@@ -155,26 +155,25 @@ function onCanvasClick(e) {
 // drag to pan
 function onMouseDown(e) {
   if (zoom.value <= 1) return
-  dragging = true
-  dragStart = { x: e.clientX, y: e.clientY }
-  panStart = { x: panX.value, y: panY.value }
+  dragging = true; lastX = e.clientX; lastY = e.clientY
 }
 function onMouseMove(e) {
   if (!dragging) return
-  panX.value = panStart.x + (e.clientX - dragStart.x)
-  panY.value = panStart.y + (e.clientY - dragStart.y)
+  panX.value += e.clientX - lastX
+  panY.value += e.clientY - lastY
+  lastX = e.clientX; lastY = e.clientY
 }
 function onMouseUp() { dragging = false }
 function onTouchStart(e) {
-  if (zoom.value <= 1 || e.touches.length !== 1) return
-  dragging = true
-  dragStart = { x: e.touches[0].clientX, y: e.touches[0].clientY }
-  panStart = { x: panX.value, y: panY.value }
+  if (zoom.value <= 1) return
+  if (e.touches.length !== 1) { dragging = false; return }
+  dragging = true; lastX = e.touches[0].clientX; lastY = e.touches[0].clientY
 }
 function onTouchMove(e) {
   if (!dragging) return
-  panX.value = panStart.x + (e.touches[0].clientX - dragStart.x)
-  panY.value = panStart.y + (e.touches[0].clientY - dragStart.y)
+  panX.value += e.touches[0].clientX - lastX
+  panY.value += e.touches[0].clientY - lastY
+  lastX = e.touches[0].clientX; lastY = e.touches[0].clientY
 }
 function onTouchEnd() { dragging = false }
 
