@@ -18,7 +18,7 @@ async function fetchJSON(url, retries = 2) {
     const ctrl = new AbortController()
     const t = setTimeout(() => ctrl.abort(), TIMEOUT)
     try { const res = await fetch(url, { signal: ctrl.signal }); if (!res.ok) throw Error(`HTTP ${res.status}`); return await res.json() }
-    catch (e) { if (r === retries) throw e; await new Promise(r => setTimeout(r, 500 * (r + 1))) }
+    catch (e) { if (r === retries) throw e; await new Promise(r => setTimeout(r, 1200)) }
     finally { clearTimeout(t) }
   }
 }
