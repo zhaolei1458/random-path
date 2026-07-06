@@ -211,8 +211,9 @@ watch(() => [props.segments, props.waypoints, props.supplyPoints, props.highligh
 </template>
 <style scoped>
 .thumb-wrap { position: relative; }
-.route-thumb { width: 100%; border-radius: 12px; background: #faf7fc; border: 1.5px solid #f2eaf4; display: block; }
+.route-thumb { width: 100%; max-width: 480px; border-radius: 12px; background: #faf7fc; border: 1.5px solid #f2eaf4; display: block; }
 .route-thumb.zoomable { cursor: grab; }
+.thumb-wrap { max-width: 480px; overflow: hidden; }
 .zoom-btns { position: absolute; top: 6px; right: 6px; display: flex; gap: 3px; z-index: 5; }
 .zbtn { width: 26px; height: 26px; border-radius: 6px; border: 1px solid #ddd6fe; background: rgba(255,255,255,0.9); color: #7c3aed; font-size: 16px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; line-height: 1; }
 .zbtn:disabled { opacity: 0.3; cursor: default; }

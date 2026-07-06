@@ -1,5 +1,5 @@
 import { reactive } from 'vue'
-const AK = 'radompath_addresses_v3', HK = 'radompath_history', MH = 20
+const AK = 'radompath_addresses_v4', HK = 'radompath_history', MH = 20
 const D = {}
 export function loadAddresses() { try { const r = localStorage.getItem(AK); if (r) return reactive(JSON.parse(r)) } catch (e) {} localStorage.setItem(AK, JSON.stringify(D)); return reactive({ ...D }) }
 export function saveAddresses(a) { localStorage.setItem(AK, JSON.stringify(a)) }
