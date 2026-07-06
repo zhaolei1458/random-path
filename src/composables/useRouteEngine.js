@@ -220,10 +220,12 @@ export function isBadLocationName(name) {
 export async function nameWaypoint(lng, lat) {
   let name = await reverseGeocode(lng, lat)
   if (name && name.length >= 2 && !isBadLocationName(name)) return name
+  await new Promise(r => setTimeout(r, 600))
   try {
     const pois = await searchPOIs(lng, lat, '道路交叉口|公园广场|风景名胜|地标|购物中心|商场|酒店|交通枢纽|桥梁|政府机构', 2000, 5)
     if (pois.length > 0) return pois.filter(p => !isBadLocationName(p.name))[0]?.name || pois[0].name
   } catch(e) {}
+  await new Promise(r => setTimeout(r, 600))
   const fallback = await reverseGeocode(lng, lat)
   if (fallback && fallback.length >= 2) {
     const parts = fallback.split(/[（）()]/)
