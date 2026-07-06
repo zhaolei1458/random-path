@@ -1,4 +1,4 @@
-export const AMAP_KEY = 'e91b21fc7210a515e68bb27e746f8314'
+export const AMAP_KEY = import.meta.env.VITE_AMAP_KEY || ''
 const TIMEOUT = 10000
 let sdkLoaded = false, sdkLoading = null
 export function loadAMapSDK() {

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { haversine } from '../utils/math.js'
 import { geocode } from '../composables/useAMap.js'
 import { loadAddresses, saveAddresses, saveHistory } from '../composables/useStorage.js'
@@ -28,13 +28,26 @@ onMounted(() => {
   if (addresses['公司']) { to.value = { name: addresses['公司'].name, lng: addresses['公司'].lng, lat: addresses['公司'].lat } }
 })
 
-import { onMounted } from 'vue'
 function onNameInput(target) { activeSuggest.value = target; searchAddress(target === 'from' ? from.value.name : to.value.name) }
 function selectSugg(i) { const p = pickSuggestion(i); if (!p) return; if (activeSuggest.value === 'from') from.value = { name: p.name, lng: p.lng, lat: p.lat }; else to.value = { name: p.name, lng: p.lng, lat: p.lat }; activeSuggest.value = ''; toast(p.name) }
 function pickAddr(a, t) { const ad = addresses[a]; if (!ad) return; if (t === 'from') from.value = { name: ad.name, lng: ad.lng, lat: ad.lat }; else to.value = { name: ad.name, lng: ad.lng, lat: ad.lat }; toast(a) }
 async function doGeocode(t) {
   const n = t === 'from' ? from.value.name : to.value.name; if (!n.trim()) { toast('请输入地名', 'warn'); return }
   const r = await geocode(n, '西安'); if (r) { if (t === 'from') from.value = { name: r.name, lng: r.lng, lat: r.lat }; else to.value = { name: r.name, lng: r.lng, lat: r.lat }; toast('已获取坐标') } else toast('未找到该地点', 'warn')
+}
+function locateMe(target) {
+  if (!navigator.geolocation) { toast('浏览器不支持定位', 'warn'); return }
+  toast('正在定位…')
+  navigator.geolocation.getCurrentPosition(async (pos) => {
+    const { longitude: lng, latitude: lat } = pos.coords
+    const obj = { name: `📍 ${lng.toFixed(4)}, ${lat.toFixed(4)}`, lng: String(lng), lat: String(lat) }
+    if (target === 'from') from.value = obj; else to.value = obj
+    toast('已获取当前位置')
+    try {
+      const name = await nameWaypoint(lng, lat)
+      if (name && name.length > 2) { if (target === 'from') from.value.name = name; else to.value.name = name }
+    } catch(e) {}
+  }, () => { toast('定位失败，请检查权限', 'warn') }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 })
 }
 
 async function doGenerate(isRetry = false) {
@@ -83,6 +96,7 @@ function saveNewAddr() { const a = newAddr.value; if (!a.alias || !a.name || !a.
     <div class="row" style="position:relative">
       <input v-model="from.name" placeholder="地名" style="flex:1" @input="onNameInput('from')" @focus="onNameInput('from')" @blur="setTimeout(closeSuggest,200)">
       <button class="btn btn-sm" style="background:#f97316;color:#fff;flex-shrink:0;padding:6px 10px;font-size:11px" @click="doGeocode('from')">🔍</button>
+      <button class="btn btn-sm" style="background:#42a5f5;color:#fff;flex-shrink:0;padding:6px 10px;font-size:11px" @click="locateMe('from')">📍</button>
       <div v-if="showSuggest && activeSuggest==='from'" class="suggest-drop"><div v-for="(s,i) in suggestions" :key="i" class="suggest-item" @mousedown.prevent="selectSugg(i)"><span class="s-name">{{ s.name }}</span><span class="s-dist">{{ s.district }}</span></div></div>
     </div>
     <div class="row"><input v-model="from.lng" type="number" step="0.000001" placeholder="经度" style="flex:1"><input v-model="from.lat" type="number" step="0.000001" placeholder="纬度" style="flex:1"></div>
@@ -92,6 +106,7 @@ function saveNewAddr() { const a = newAddr.value; if (!a.alias || !a.name || !a.
     <div class="row" style="position:relative">
       <input v-model="to.name" placeholder="地名" style="flex:1" @input="onNameInput('to')" @focus="onNameInput('to')" @blur="setTimeout(closeSuggest,200)">
       <button class="btn btn-sm" style="background:#f97316;color:#fff;flex-shrink:0;padding:6px 10px;font-size:11px" @click="doGeocode('to')">🔍</button>
+      <button class="btn btn-sm" style="background:#42a5f5;color:#fff;flex-shrink:0;padding:6px 10px;font-size:11px" @click="locateMe('to')">📍</button>
       <div v-if="showSuggest && activeSuggest==='to'" class="suggest-drop"><div v-for="(s,i) in suggestions" :key="i" class="suggest-item" @mousedown.prevent="selectSugg(i)"><span class="s-name">{{ s.name }}</span><span class="s-dist">{{ s.district }}</span></div></div>
     </div>
     <div class="row"><input v-model="to.lng" type="number" step="0.000001" placeholder="经度" style="flex:1"><input v-model="to.lat" type="number" step="0.000001" placeholder="纬度" style="flex:1"></div>

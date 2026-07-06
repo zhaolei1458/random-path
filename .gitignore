@@ -2,3 +2,5 @@ node_modules/
 dist/
 gitee-pages/
 *.cmd
+.env
+.env.local
