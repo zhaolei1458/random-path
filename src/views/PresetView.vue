@@ -193,7 +193,11 @@ async function searchSupplyPoints(segments) {
   if (allCoords.length < 2) return []
   const nSamples = Math.max(3, Math.min(MAX_SAMPLES, Math.ceil(allCoords.length / 15)))
   const sampled = samplePoints(allCoords, nSamples)
-  const results = await Promise.all(sampled.map(pt => searchPOIs(pt.lng, pt.lat, SUPPLY_POI_TYPES, SUPPLY_RADIUS, SUPPLY_LIMIT)))
+  const results = []
+  for (const pt of sampled) {
+    results.push(await searchPOIs(pt.lng, pt.lat, SUPPLY_POI_TYPES, SUPPLY_RADIUS, SUPPLY_LIMIT))
+    await new Promise(r => setTimeout(r, 150))
+  }
   const seen = new Set(); const merged = []
   for (const batch of results) {
     for (const poi of batch) {
