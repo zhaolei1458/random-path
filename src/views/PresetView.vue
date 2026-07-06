@@ -326,7 +326,7 @@ async function generate() {
       <div class="segments"><div class="seg" v-for="(seg,i) in result.segments" :key="i"><span class="seg-detail">第{{ i+1 }}段: {{ fullPoints[i]?.name }} → {{ fullPoints[i+1]?.name }}</span><span class="seg-nums">{{ (seg.distance/1000).toFixed(1) }}km · {{ Math.round(seg.duration/60) }}min</span></div></div>
       <div v-if="supplyPoints.length" style="margin-top:12px;border-top:1px dashed #ece0ec;padding-top:10px">
         <div style="font-size:12px;font-weight:700;color:#5e5468;margin-bottom:6px">💧 沿途补给点 ({{ supplyPoints.length }})</div>
-        <div class="supply-chips"><span v-for="(sp, i) in supplyPoints" :key="i" class="supply-chip" :title="sp.type">{{ sp.name }}</span></div>
+        <div class="supply-chips"><span v-for="(sp, i) in supplyPoints" :key="i" class="supply-chip" :title="sp.type">{{ i+1 }}. {{ sp.name }}</span></div>
       </div>
     </div>
     <button class="btn btn-supply" @click="searchSupply" :disabled="supplyLoading">
