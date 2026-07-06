@@ -109,7 +109,7 @@ const customStart = ref({ name: '', lng: '', lat: '' })
 const waypoints = ref([])
 const loading = ref(false), tryInfo = ref(''), progress = ref(0)
 const result = ref(null), resultShow = ref(false), collapseOpen = ref(false)
-const SUPPLY_POI_TYPES = '080100|010100|060000|050000', SUPPLY_RADIUS = 800, SUPPLY_LIMIT = 15, MAX_SAMPLES = 12
+const SUPPLY_POI_TYPES = '080100|010100|060000|050000', SUPPLY_RADIUS = 800, SUPPLY_LIMIT = 15, MAX_SAMPLES = 5
 
 let st = null
 function onStartInput() { clearTimeout(st); st = setTimeout(() => searchAddress(customStart.value.name), 200) }
@@ -196,7 +196,7 @@ async function searchSupplyPoints(segments) {
   const results = []
   for (const pt of sampled) {
     results.push(await searchPOIs(pt.lng, pt.lat, SUPPLY_POI_TYPES, SUPPLY_RADIUS, SUPPLY_LIMIT))
-    await new Promise(r => setTimeout(r, 150))
+    await new Promise(r => setTimeout(r, 500))
   }
   const seen = new Set(); const merged = []
   for (const batch of results) {
@@ -223,14 +223,23 @@ async function generate() {
     }
     const wps = pts.slice(1, -1)
     if (wps.length > 0) { tryInfo.value = '正在获取途经点地名…'; for (const wp of wps) { wp.poiName = await nameWaypoint(wp.lng, wp.lat); await new Promise(r => setTimeout(r, 200)) } }
-    progress.value = 85; tryInfo.value = '正在搜索沿途补给点…'
-    let sp = []
-    try { sp = await searchSupplyPoints(segs); tryInfo.value = sp.length > 0 ? `找到 ${sp.length} 个沿途补给点` : '沿途暂未发现补给点' } catch(e) { console.warn('补给点搜索失败:', e) }
     progress.value = 100; await new Promise(r => setTimeout(r, 200))
-    result.value = { waypoints: wps, segments: segs, totalDistance: td, totalDuration: tt, sector: -1, totalClimb: null, supplyPoints: sp }
+    result.value = { waypoints: wps, segments: segs, totalDistance: td, totalDuration: tt, sector: -1, totalClimb: null, supplyPoints: [] }
     resultShow.value = true
+    loadSupplyPointsInBackground(segs)
   } catch (e) { toast('错误: ' + e.message, 'err') }
   loading.value = false
+}
+
+async function loadSupplyPointsInBackground(segs) {
+  await new Promise(r => setTimeout(r, 3000))
+  try {
+    const sp = await searchSupplyPoints(segs)
+    if (sp.length > 0 && result.value) {
+      result.value.supplyPoints = sp
+      tryInfo.value = `找到 ${sp.length} 个沿途补给点`
+    }
+  } catch(e) { console.warn('补给点搜索失败:', e) }
 }
 </script>
 
