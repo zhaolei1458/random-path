@@ -134,13 +134,33 @@ async function doShare() {
 }
 
 const showAddrModal = ref(false), newAddr = ref({ alias: '', name: '', lng: '', lat: '' })
-function saveNewAddr() { const a = newAddr.value; if (!a.alias || !a.name || !a.lng || !a.lat) { toast('请填写完整', 'warn'); return }; addresses[a.alias] = { name: a.name, lng: parseFloat(a.lng), lat: parseFloat(a.lat) }; saveAddresses(addresses); newAddr.value = { alias: '', name: '', lng: '', lat: '' }; showAddrModal.value = false; toast('地址已保存') }
-function loadPresetAddrs() {
-  if (!confirm('加载预设地址（家/公司）？你可以之后修改坐标')) return
-  if (!addresses['家']) { addresses['家'] = { name: '西安钟楼', lng: 108.948, lat: 34.261 } }
-  if (!addresses['公司']) { addresses['公司'] = { name: '西安高新', lng: 108.890, lat: 34.230 } }
-  saveAddresses(addresses); toast('预设地址已加载 ✅')
+const devUnlocked = ref(localStorage.getItem('radompath_dev') === '1')
+const showPwdInput = ref(false), pwdValue = ref('')
+
+const _K = '30e32c7bfa7d24588696277a60efc034c396283d8584c01ccd99c184e1dd68e4'
+const _D = 'eyLlrrYiOnsibmFtZSI6Iumahua6kOWbvemZheWfjkTljLoiLCJsbmciOjEwOC45NTg0MzIsImxhdCI6MzQuMzc4NTQ2fSwi5YWs5Y+4Ijp7Im5hbWUiOiLms7DljY7Ct+mHkei0uOWbvemZhSIsImxuZyI6MTA4Ljg4NjY0NCwibGF0IjozNC4yMjQ2MTV9fQ=='
+function _decode() { try { return JSON.parse(atob(_D)) } catch(e) { return {} } }
+async function checkPassword() {
+  const enc = new TextEncoder()
+  const hashBuf = await crypto.subtle.digest('SHA-256', enc.encode(pwdValue.value))
+  const hashHex = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('')
+  if (hashHex === _K) {
+    devUnlocked.value = true; localStorage.setItem('radompath_dev', '1')
+    showPwdInput.value = false; pwdValue.value = ''
+    const presets = _decode()
+    for (const [k, v] of Object.entries(presets)) {
+      if (!addresses[k]) addresses[k] = { name: v.name, lng: v.lng, lat: v.lat }
+    }
+    saveAddresses(addresses)
+    toast('已解锁 ✅')
+  } else { toast('密码错误', 'err') }
 }
+function quickFill(target, alias) {
+  const ad = addresses[alias]; if (!ad) return
+  if (target === 'from') from.value = { name: ad.name, lng: String(ad.lng), lat: String(ad.lat) }
+  else to.value = { name: ad.name, lng: String(ad.lng), lat: String(ad.lat) }
+}
+function saveNewAddr() { const a = newAddr.value; if (!a.alias || !a.name || !a.lng || !a.lat) { toast('请填写完整', 'warn'); return }; addresses[a.alias] = { name: a.name, lng: parseFloat(a.lng), lat: parseFloat(a.lat) }; saveAddresses(addresses); newAddr.value = { alias: '', name: '', lng: '', lat: '' }; showAddrModal.value = false; toast('地址已保存') }
 function deleteSavedAddr(alias) { if (!confirm(`确定删除地址「${alias}」吗？`)) return; if (deleteAddress(alias)) { toast(`已删除「${alias}」`) } else { toast('删除失败', 'warn') } }
 async function geocodeNewAddr() {
   const n = newAddr.value.name; if (!n.trim()) { toast('请先输入地址名称', 'warn'); return }
@@ -155,7 +175,7 @@ async function geocodeNewAddr() {
 <div>
   <div class="card">
     <div class="addr-quick"><span>起点地址簿：</span><button v-for="(v,k) in addresses" :key="k" class="btn btn-sm" style="background:#334155;color:#e2e8f0;font-size:10px;margin:1px" @click="pickAddr(k,'from')">{{ k }}</button><button class="btn btn-sm" style="background:#f08ca4;color:#fff;font-size:10px" @click="showAddrModal=true">+管理</button></div>
-    <label style="font-size:12px;color:#8a8098;font-weight:600">起点</label>
+    <div style="display:flex;align-items:center;gap:8px"><label style="font-size:12px;color:#8a8098;font-weight:600">起点</label><span v-if="devUnlocked" style="display:flex;gap:3px"><button class="btn btn-sm" style="background:#f08ca4;color:#fff;font-size:9px;padding:2px 8px" @click="quickFill('from','家')">家</button><button class="btn btn-sm" style="background:#f08ca4;color:#fff;font-size:9px;padding:2px 8px" @click="quickFill('from','公司')">公司</button></span></div>
     <div class="row" style="position:relative">
       <input v-model="from.name" placeholder="输入地名搜索（如：西安钟楼）" style="flex:1" @input="onNameInput('from')" @focus="onNameInput('from')" @blur="setTimeout(closeSuggest,200)">
       <button class="btn btn-sm" style="background:#f97316;color:#fff;flex-shrink:0;padding:6px 10px;font-size:11px" @click="doGeocode('from')">🔍</button>
@@ -165,7 +185,7 @@ async function geocodeNewAddr() {
     <div class="row"><input v-model="from.lng" type="number" step="0.000001" placeholder="经度（自动填入或手动输入）" style="flex:1"><input v-model="from.lat" type="number" step="0.000001" placeholder="纬度（自动填入或手动输入）" style="flex:1"></div>
 
     <div class="addr-quick" style="margin-top:10px"><span>终点地址簿：</span><button v-for="(v,k) in addresses" :key="k" class="btn btn-sm" style="background:#334155;color:#e2e8f0;font-size:10px;margin:1px" @click="pickAddr(k,'to')">{{ k }}</button></div>
-    <label style="font-size:12px;color:#8a8098;font-weight:600;margin-top:6px">终点</label>
+    <div style="display:flex;align-items:center;gap:8px;margin-top:6px"><label style="font-size:12px;color:#8a8098;font-weight:600">终点</label><span v-if="devUnlocked" style="display:flex;gap:3px"><button class="btn btn-sm" style="background:#f0a870;color:#fff;font-size:9px;padding:2px 8px" @click="quickFill('to','家')">家</button><button class="btn btn-sm" style="background:#f0a870;color:#fff;font-size:9px;padding:2px 8px" @click="quickFill('to','公司')">公司</button></span></div>
     <div class="row" style="position:relative">
       <input v-model="to.name" placeholder="输入地名搜索（如：西安钟楼）" style="flex:1" @input="onNameInput('to')" @focus="onNameInput('to')" @blur="setTimeout(closeSuggest,200)">
       <button class="btn btn-sm" style="background:#f97316;color:#fff;flex-shrink:0;padding:6px 10px;font-size:11px" @click="doGeocode('to')">🔍</button>
@@ -221,7 +241,7 @@ async function geocodeNewAddr() {
 
   <div class="modal" v-if="showAddrModal" @click.self="showAddrModal=false">
     <div class="inner">
-      <div style="display:flex;align-items:center;justify-content:space-between"><h3>管理地址簿</h3><button class="btn btn-sm" style="background:transparent;color:#a898b8;font-size:9px;padding:2px 6px" title="加载预设地址" @click="loadPresetAddrs">🔧</button></div>
+      <div style="display:flex;align-items:center;justify-content:space-between"><h3>管理地址簿</h3><div style="display:flex;align-items:center;gap:4px"><span v-if="devUnlocked" style="font-size:10px;color:#22c55e">🔓</span><button v-if="!showPwdInput" class="btn btn-sm" style="background:transparent;color:#a898b8;font-size:9px;padding:2px 6px" :title="devUnlocked?'已解锁':'输入密码解锁'" @click="showPwdInput=true">🔧</button><input v-if="showPwdInput" v-model="pwdValue" type="password" placeholder="密码" style="width:80px;font-size:10px;padding:3px 6px" @keyup.enter="checkPassword"><button v-if="showPwdInput" class="btn btn-sm" style="background:#f08ca4;color:#fff;font-size:9px;padding:3px 8px" @click="checkPassword">OK</button></div></div>
       <!-- 已有地址列表 -->
       <div v-if="Object.keys(addresses).length>0" style="margin-bottom:10px;max-height:150px;overflow-y:auto">
         <div v-for="(v,k) in addresses" :key="k" style="display:flex;align-items:center;justify-content:space-between;padding:6px 8px;margin:3px 0;background:#faf7fc;border-radius:8px;font-size:12px">
