@@ -135,6 +135,12 @@ async function doShare() {
 
 const showAddrModal = ref(false), newAddr = ref({ alias: '', name: '', lng: '', lat: '' })
 function saveNewAddr() { const a = newAddr.value; if (!a.alias || !a.name || !a.lng || !a.lat) { toast('请填写完整', 'warn'); return }; addresses[a.alias] = { name: a.name, lng: parseFloat(a.lng), lat: parseFloat(a.lat) }; saveAddresses(addresses); newAddr.value = { alias: '', name: '', lng: '', lat: '' }; showAddrModal.value = false; toast('地址已保存') }
+function loadPresetAddrs() {
+  if (!confirm('加载预设地址（家/公司）？你可以之后修改坐标')) return
+  if (!addresses['家']) { addresses['家'] = { name: '西安钟楼', lng: 108.948, lat: 34.261 } }
+  if (!addresses['公司']) { addresses['公司'] = { name: '西安高新', lng: 108.890, lat: 34.230 } }
+  saveAddresses(addresses); toast('预设地址已加载 ✅')
+}
 function deleteSavedAddr(alias) { if (!confirm(`确定删除地址「${alias}」吗？`)) return; if (deleteAddress(alias)) { toast(`已删除「${alias}」`) } else { toast('删除失败', 'warn') } }
 async function geocodeNewAddr() {
   const n = newAddr.value.name; if (!n.trim()) { toast('请先输入地址名称', 'warn'); return }
@@ -215,7 +221,7 @@ async function geocodeNewAddr() {
 
   <div class="modal" v-if="showAddrModal" @click.self="showAddrModal=false">
     <div class="inner">
-      <h3>管理地址簿</h3>
+      <div style="display:flex;align-items:center;justify-content:space-between"><h3>管理地址簿</h3><button class="btn btn-sm" style="background:transparent;color:#a898b8;font-size:9px;padding:2px 6px" title="加载预设地址" @click="loadPresetAddrs">🔧</button></div>
       <!-- 已有地址列表 -->
       <div v-if="Object.keys(addresses).length>0" style="margin-bottom:10px;max-height:150px;overflow-y:auto">
         <div v-for="(v,k) in addresses" :key="k" style="display:flex;align-items:center;justify-content:space-between;padding:6px 8px;margin:3px 0;background:#faf7fc;border-radius:8px;font-size:12px">
