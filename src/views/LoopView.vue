@@ -1,6 +1,6 @@
 <script setup>
-import { ref, computed } from 'vue'
-import { loadAddresses } from '../composables/useStorage.js'
+import { ref, computed, onMounted } from 'vue'
+import { loadAddresses, saveLastRoute, loadLastRoute } from '../composables/useStorage.js'
 import { geocode } from '../composables/useAMap.js'
 import { useSuggest } from '../composables/useAutoComplete.js'
 import { tryGenerateRoute, generateLoopWaypoints, MAX_RETRIES, nameWaypoint, buildNavUrl, openNavigation, buildGPX, calcCalories } from '../composables/useRouteEngine.js'
@@ -61,15 +61,40 @@ async function doGenerate(isRetry = false) {
       }
     })
     if (!route) { toast('生成失败，请重试', 'err'); loading.value = false; return }
-    if (route.waypoints.length > 0) { tryInfo.value = '正在获取途经点地名…'; for (const wp of route.waypoints) { wp.poiName = await nameWaypoint(wp.lng, wp.lat); await new Promise(r => setTimeout(r, 200)) } }
+    if (route.waypoints.length > 0) { tryInfo.value = '正在获取途经点地名…'; await Promise.all(route.waypoints.map(async (wp) => { wp.poiName = await nameWaypoint(wp.lng, wp.lat) })) }
     progress.value = 100; await new Promise(r => setTimeout(r, 200))
     result.value = route; resultShow.value = true; loading.value = false
+    saveLastRoute({ type: 'loop', home: c, waypoints: route.waypoints, segments: route.segments, totalDistance: route.totalDistance, totalDuration: route.totalDuration, sector: route.sector, totalClimb: route.totalClimb, targetKm: targetKm.value })
   } catch (e) { toast('错误: ' + e.message, 'err'); loading.value = false }
 }
 
 function openNav() { if (result.value && centerObj.value) openNavigation(centerObj.value, centerObj.value, result.value.waypoints) }
 function copyNav() { if (navUrl.value) { navigator.clipboard?.writeText(navUrl.value); toast('已复制') } }
 function downloadGpx() { if (result.value && centerObj.value) { const gpx = buildGPX(result.value, centerObj.value, centerObj.value); const blob = new Blob([gpx], { type: 'application/gpx+xml' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `RandomPath_Loop_${centerObj.value.name}_${(result.value.totalDistance/1000).toFixed(1)}km.gpx`; a.click(); URL.revokeObjectURL(a.href) } }
+
+// 自动GPS定位
+onMounted(async () => {
+  const last = loadLastRoute()
+  if (last && last.type === 'loop' && last.home) {
+    center.value = { name: last.home.name, lng: String(last.home.lng), lat: String(last.home.lat) }
+    if (last.targetKm) targetKm.value = last.targetKm
+    if (last.segments?.length) { result.value = { waypoints: last.waypoints || [], segments: last.segments, totalDistance: last.totalDistance, totalDuration: last.totalDuration, sector: last.sector, totalClimb: last.totalClimb }; resultShow.value = true }
+    return
+  }
+  if (navigator.geolocation) {
+    try {
+      const pos = await new Promise((res, rej) => {
+        navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: true, timeout: 10000, maximumAge: 300000 })
+      })
+      const { longitude: lng, latitude: lat } = pos.coords
+      center.value = { name: `📍 ${lng.toFixed(4)}, ${lat.toFixed(4)}`, lng: String(lng), lat: String(lat) }
+      try {
+        const name = await nameWaypoint(lng, lat)
+        if (name && name.length > 2) center.value.name = name
+      } catch(e) {}
+    } catch(e) {}
+  }
+})
 </script>
 
 <template>

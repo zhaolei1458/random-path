@@ -24,7 +24,7 @@ const activeSuggest = ref('')
 const homeObj = computed(() => { const l = parseFloat(from.value.lng), a = parseFloat(from.value.lat); return (l && a && from.value.name) ? { lng: l, lat: a, name: from.value.name } : null })
 const workObj = computed(() => { const l = parseFloat(to.value.lng), a = parseFloat(to.value.lat); return (l && a && to.value.name) ? { lng: l, lat: a, name: to.value.name } : null })
 
-onMounted(() => {
+onMounted(async () => {
   if (addresses['家']) { from.value = { name: addresses['家'].name, lng: addresses['家'].lng, lat: addresses['家'].lat } }
   if (addresses['公司']) { to.value = { name: addresses['公司'].name, lng: addresses['公司'].lng, lat: addresses['公司'].lat } }
   // 恢复上次路线
@@ -36,6 +36,21 @@ onMounted(() => {
     if (last.maxKm) maxKm.value = last.maxKm
     result.value = { waypoints: last.waypoints || [], segments: last.segments || [], totalDistance: last.totalDistance, totalDuration: last.totalDuration, sector: last.sector, totalClimb: last.totalClimb }
     resultShow.value = true
+    return
+  }
+  // 没有上次路线也没有地址簿 → 自动GPS定位起点
+  if (!addresses['家'] && navigator.geolocation) {
+    try {
+      const pos = await new Promise((res, rej) => {
+        navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: true, timeout: 10000, maximumAge: 300000 })
+      })
+      const { longitude: lng, latitude: lat } = pos.coords
+      from.value = { name: `📍 ${lng.toFixed(4)}, ${lat.toFixed(4)}`, lng: String(lng), lat: String(lat) }
+      try {
+        const name = await nameWaypoint(lng, lat)
+        if (name && name.length > 2) from.value.name = name
+      } catch(e) {}
+    } catch(e) {}
   }
 })
 
