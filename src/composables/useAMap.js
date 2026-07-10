@@ -35,43 +35,47 @@ export async function searchPOIsByText(keywords, city = '', limit = 5) {
 
 export async function geocode(address, city = '') {
   const k = `${address}||${city}`; if (gcCache.has(k)) return gcCache.get(k)
-  const tryPOI = async (kw, limit = 1) => {
-    const pois = await searchPOIsByText(kw, city || '', limit)
-    if (pois.length > 0) return { lng: pois[0].lng, lat: pois[0].lat, name: pois[0].name }
-    return null
-  }
-  // 从用户原始输入中提取比 API 更详细的版本
+  // 从用户原始输入中提取比 API 结果更详细的版本
   const extractDetail = (input, apiName) => {
     if (!apiName) return input
     const idx = input.indexOf(apiName)
     return idx >= 0 ? input.slice(idx) : input
   }
-  try {
-    let url = `https://restapi.amap.com/v3/geocode/geo?key=${AMAP_KEY}&address=${encodeURIComponent(address)}`
-    if (city) url += `&city=${encodeURIComponent(city)}`
-    const d = await fetchJSON(url)
-    if (d.status === '1' && d.geocodes?.length > 0) {
-      const g = d.geocodes[0]; const [lng, lat] = g.location.split(',').map(parseFloat)
-      const apiName = g.formatted_address || ''
-      if (address.length > apiName.length + 2) {
-        // 先精确搜
-        let poi = await tryPOI(address)
-        // 没找到？试试去掉修饰词再搜（如"A口"→""、"地铁口"→"地铁站"）
-        if (!poi) {
-          const broad = address.replace(/[A-Fa-f]\s*口/g, '出口').replace(/地铁口$/, '地铁站')
-          if (broad !== address) poi = await tryPOI(broad, 3)
+
+  // POI 搜索（精确地点）+ geocode（地址→坐标）并行发出
+  const [poiResults, geoResult] = await Promise.all([
+    searchPOIsByText(address, city || '', 5).catch(() => []),
+    (async () => {
+      try {
+        let url = `https://restapi.amap.com/v3/geocode/geo?key=${AMAP_KEY}&address=${encodeURIComponent(address)}`
+        if (city) url += `&city=${encodeURIComponent(city)}`
+        const d = await fetchJSON(url)
+        if (d.status === '1' && d.geocodes?.length > 0) {
+          const g = d.geocodes[0]; const [lng, lat] = g.location.split(',').map(parseFloat)
+          return { lng, lat, name: g.formatted_address || '' }
         }
-        if (poi) { const r = { ...poi }; if (gcCache.size < 100) gcCache.set(k, r); return r }
-        // POI 也搜不到，用提取了细节的用户输入
-        const r = { lng, lat, name: extractDetail(address, apiName) }; if (gcCache.size < 100) gcCache.set(k, r); return r
-      }
-      const r = { lng, lat, name: apiName || address }; if (gcCache.size < 100) gcCache.set(k, r); return r
-    }
-    // geocode 完全没找到 → POI 兜底
-    let poi = await tryPOI(address)
-    if (!poi) { const broad = address.replace(/[A-Fa-f]\s*口/g, '出口').replace(/地铁口$/, '地铁站'); if (broad !== address) poi = await tryPOI(broad, 3) }
-    if (poi) { if (gcCache.size < 100) gcCache.set(k, poi); return poi }
-  } catch (e) {}
+      } catch(e) {}
+      return null
+    })()
+  ])
+
+  // 优先用 POI 精确结果（小区、学校、地铁口、大厦等具体地点）
+  if (poiResults.length > 0) {
+    const best = poiResults[0]
+    const r = { lng: best.lng, lat: best.lat, name: best.name }
+    if (gcCache.size < 100) gcCache.set(k, r); return r
+  }
+
+  // POI 没找到 → geocode 兜底
+  if (geoResult) {
+    const { lng, lat } = geoResult
+    const apiName = geoResult.name
+    // geocode 结果太笼统 → 从用户输入提取细节
+    const name = (address.length > apiName.length + 2) ? extractDetail(address, apiName) : (apiName || address)
+    const r = { lng, lat, name }
+    if (gcCache.size < 100) gcCache.set(k, r); return r
+  }
+
   return null
 }
 export async function reverseGeocode(lng, lat) {
