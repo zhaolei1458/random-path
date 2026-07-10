@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { haversine } from '../utils/math.js'
-import { geocode } from '../composables/useAMap.js'
+import { geocode, setDetectedCity, detectCityFromGPS } from '../composables/useAMap.js'
 import { loadAddresses, saveAddresses, deleteAddress, saveHistory, saveLastRoute, loadLastRoute } from '../composables/useStorage.js'
 import { useSuggest } from '../composables/useAutoComplete.js'
 import { tryGenerateRoute, MAX_RETRIES, nameWaypoint, buildNavUrl, openNavigation, buildGPX, calcCalories } from '../composables/useRouteEngine.js'
@@ -47,8 +47,9 @@ onMounted(async () => {
       const { longitude: lng, latitude: lat } = pos.coords
       from.value = { name: `📍 ${lng.toFixed(4)}, ${lat.toFixed(4)}`, lng: String(lng), lat: String(lat) }
       try {
-        const name = await nameWaypoint(lng, lat)
+        const [name, city] = await Promise.all([nameWaypoint(lng, lat), detectCityFromGPS(lng, lat)])
         if (name && name.length > 2) from.value.name = name
+        if (city) setDetectedCity(city)
       } catch(e) {}
     } catch(e) {}
   }
@@ -59,7 +60,7 @@ function selectSugg(i) { const p = pickSuggestion(i); if (!p) return; if (active
 function pickAddr(a, t) { const ad = addresses[a]; if (!ad) return; if (t === 'from') from.value = { name: ad.name, lng: ad.lng, lat: ad.lat }; else to.value = { name: ad.name, lng: ad.lng, lat: ad.lat }; toast(a) }
 async function doGeocode(t) {
   const n = t === 'from' ? from.value.name : to.value.name; if (!n.trim()) { toast('请输入地名', 'warn'); return }
-  const r = await geocode(n, '西安'); if (r) { if (t === 'from') from.value = { name: r.name, lng: r.lng, lat: r.lat }; else to.value = { name: r.name, lng: r.lng, lat: r.lat }; toast('已获取坐标 ✅') } else toast('未找到该地点，请尝试更具体的名称（如"钟楼"→"西安钟楼"）', 'warn')
+  const r = await geocode(n); if (r) { if (t === 'from') from.value = { name: r.name, lng: r.lng, lat: r.lat }; else to.value = { name: r.name, lng: r.lng, lat: r.lat }; toast('已获取坐标 ✅') } else toast('未找到该地点，请尝试更具体的名称', 'warn')
 }
 function locateMe(target) {
   if (!navigator.geolocation) { toast('浏览器不支持定位', 'warn'); return }
@@ -70,8 +71,9 @@ function locateMe(target) {
     if (target === 'from') from.value = obj; else to.value = obj
     toast('已获取当前位置')
     try {
-      const name = await nameWaypoint(lng, lat)
+      const [name, city] = await Promise.all([nameWaypoint(lng, lat), detectCityFromGPS(lng, lat)])
       if (name && name.length > 2) { if (target === 'from') from.value.name = name; else to.value.name = name }
+      if (city) setDetectedCity(city)
     } catch(e) {}
   }, () => { toast('定位失败，请检查权限', 'warn') }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 })
 }
@@ -136,8 +138,8 @@ function saveNewAddr() { const a = newAddr.value; if (!a.alias || !a.name || !a.
 function deleteSavedAddr(alias) { if (!confirm(`确定删除地址「${alias}」吗？`)) return; if (deleteAddress(alias)) { toast(`已删除「${alias}」`) } else { toast('删除失败', 'warn') } }
 async function geocodeNewAddr() {
   const n = newAddr.value.name; if (!n.trim()) { toast('请先输入地址名称', 'warn'); return }
-  toast('正在查询坐标（西安市范围）…')
-  const r = await geocode(n, '西安')
+  toast('正在查询坐标…')
+  const r = await geocode(n)
   if (r) { newAddr.value.lng = String(r.lng); newAddr.value.lat = String(r.lat); newAddr.value.name = r.name; toast('已获取坐标 ✅') }
   else toast('未找到该地点，请尝试更具体的名称（如"钟楼"→"西安钟楼"）', 'warn')
 }

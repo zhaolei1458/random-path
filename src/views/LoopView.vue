@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { loadAddresses, saveLastRoute, loadLastRoute } from '../composables/useStorage.js'
-import { geocode } from '../composables/useAMap.js'
+import { geocode, setDetectedCity, detectCityFromGPS } from '../composables/useAMap.js'
 import { useSuggest } from '../composables/useAutoComplete.js'
 import { tryGenerateRoute, generateLoopWaypoints, MAX_RETRIES, nameWaypoint, buildNavUrl, openNavigation, buildGPX, calcCalories } from '../composables/useRouteEngine.js'
 import { rateDifficulty } from '../composables/useScoring.js'
@@ -25,7 +25,7 @@ const navUrl = computed(() => result.value && centerObj.value ? buildNavUrl(cent
 function onCenterInput() { activeSuggest.value = true; searchAddress(center.value.name) }
 function selectSugg(i) { const p = pickSuggestion(i); if (p) { center.value = { name: p.name, lng: p.lng, lat: p.lat }; activeSuggest.value = false; toast(p.name) } }
 function pickAddr(a) { const ad = addresses[a]; if (!ad) return; center.value = { name: ad.name, lng: ad.lng, lat: ad.lat }; toast(a) }
-async function doGeocode() { const n = center.value.name; if (!n.trim()) { toast('请输入地名', 'warn'); return }; const r = await geocode(n, '西安'); if (r) { center.value = { name: r.name, lng: r.lng, lat: r.lat }; toast('已获取坐标') } else toast('未找到该地点', 'warn') }
+async function doGeocode() { const n = center.value.name; if (!n.trim()) { toast('请输入地名', 'warn'); return }; const r = await geocode(n); if (r) { center.value = { name: r.name, lng: r.lng, lat: r.lat }; toast('已获取坐标') } else toast('未找到该地点', 'warn') }
 function locateMe() {
   if (!navigator.geolocation) { toast('浏览器不支持定位', 'warn'); return }
   toast('正在定位…')
@@ -34,8 +34,9 @@ function locateMe() {
     center.value = { name: `📍 ${lng.toFixed(4)}, ${lat.toFixed(4)}`, lng: String(lng), lat: String(lat) }
     toast('已获取当前位置')
     try {
-      const name = await nameWaypoint(lng, lat)
+      const [name, city] = await Promise.all([nameWaypoint(lng, lat), detectCityFromGPS(lng, lat)])
       if (name && name.length > 2) center.value.name = name
+      if (city) setDetectedCity(city)
     } catch(e) {}
   }, () => { toast('定位失败，请检查权限', 'warn') }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 })
 }
@@ -89,8 +90,9 @@ onMounted(async () => {
       const { longitude: lng, latitude: lat } = pos.coords
       center.value = { name: `📍 ${lng.toFixed(4)}, ${lat.toFixed(4)}`, lng: String(lng), lat: String(lat) }
       try {
-        const name = await nameWaypoint(lng, lat)
+        const [name, city] = await Promise.all([nameWaypoint(lng, lat), detectCityFromGPS(lng, lat)])
         if (name && name.length > 2) center.value.name = name
+        if (city) setDetectedCity(city)
       } catch(e) {}
     } catch(e) {}
   }

@@ -23,6 +23,21 @@ async function fetchJSON(url, retries = 2) {
   }
 }
 const gcCache = new Map()
+// 自动检测的当前城市，GPS 定位后设置
+let detectedCity = ''
+export function getDetectedCity() { return detectedCity }
+export function setDetectedCity(c) { detectedCity = c || '' }
+export async function detectCityFromGPS(lng, lat) {
+  try {
+    const url = `https://restapi.amap.com/v3/geocode/regeo?key=${AMAP_KEY}&location=${lng},${lat}&extensions=base`
+    const d = await fetchJSON(url)
+    if (d.status === '1' && d.regeocode?.addressComponent) {
+      const ac = d.regeocode.addressComponent
+      return ac.city || ac.province || ''
+    }
+  } catch(e) {}
+  return ''
+}
 export async function searchPOIsByText(keywords, city = '', limit = 5) {
   try {
     let url = `https://restapi.amap.com/v5/place/text?key=${AMAP_KEY}&keywords=${encodeURIComponent(keywords)}&offset=${limit}`
@@ -34,46 +49,51 @@ export async function searchPOIsByText(keywords, city = '', limit = 5) {
 }
 
 export async function geocode(address, city = '') {
-  const k = `${address}||${city}`; if (gcCache.has(k)) return gcCache.get(k)
-  // 从用户原始输入中提取比 API 结果更详细的版本
+  const effectiveCity = city || detectedCity
+  const cacheK = `${address}||${effectiveCity}`; if (gcCache.has(cacheK)) return gcCache.get(cacheK)
   const extractDetail = (input, apiName) => {
     if (!apiName) return input
     const idx = input.indexOf(apiName)
     return idx >= 0 ? input.slice(idx) : input
   }
+  const doOneRound = async (useCity) => {
+    return Promise.all([
+      searchPOIsByText(address, useCity || '', 5).catch(() => []),
+      (async () => {
+        try {
+          let url = `https://restapi.amap.com/v3/geocode/geo?key=${AMAP_KEY}&address=${encodeURIComponent(address)}`
+          if (useCity) url += `&city=${encodeURIComponent(useCity)}`
+          const d = await fetchJSON(url)
+          if (d.status === '1' && d.geocodes?.length > 0) {
+            const g = d.geocodes[0]; const [lng, lat] = g.location.split(',').map(parseFloat)
+            return { lng, lat, name: g.formatted_address || '' }
+          }
+        } catch(e) {}
+        return null
+      })()
+    ])
+  }
 
-  // POI 搜索（精确地点）+ geocode（地址→坐标）并行发出
-  const [poiResults, geoResult] = await Promise.all([
-    searchPOIsByText(address, city || '', 5).catch(() => []),
-    (async () => {
-      try {
-        let url = `https://restapi.amap.com/v3/geocode/geo?key=${AMAP_KEY}&address=${encodeURIComponent(address)}`
-        if (city) url += `&city=${encodeURIComponent(city)}`
-        const d = await fetchJSON(url)
-        if (d.status === '1' && d.geocodes?.length > 0) {
-          const g = d.geocodes[0]; const [lng, lat] = g.location.split(',').map(parseFloat)
-          return { lng, lat, name: g.formatted_address || '' }
-        }
-      } catch(e) {}
-      return null
-    })()
-  ])
+  // 第一轮：优先用当前城市
+  let [poiResults, geoResult] = await doOneRound(effectiveCity)
 
-  // 优先用 POI 精确结果（小区、学校、地铁口、大厦等具体地点）
+  // 当前城市没找到 → 放开城市限制再搜一轮
+  if (effectiveCity && poiResults.length === 0 && !geoResult) {
+    [poiResults, geoResult] = await doOneRound('')
+  }
+
   if (poiResults.length > 0) {
     const best = poiResults[0]
     const r = { lng: best.lng, lat: best.lat, name: best.name }
-    if (gcCache.size < 100) gcCache.set(k, r); return r
+    if (gcCache.size < 100) gcCache.set(cacheK, r); return r
   }
 
-  // POI 没找到 → geocode 兜底
   if (geoResult) {
     const { lng, lat } = geoResult
     const apiName = geoResult.name
-    // geocode 结果太笼统 → 从用户输入提取细节
     const name = (address.length > apiName.length + 2) ? extractDetail(address, apiName) : (apiName || address)
     const r = { lng, lat, name }
-    if (gcCache.size < 100) gcCache.set(k, r); return r
+    if (gcCache.size < 100) gcCache.set(cacheK, r); return r
   }
 
   return null
