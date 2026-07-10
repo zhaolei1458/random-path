@@ -139,7 +139,7 @@ const showPwdInput = ref(false), pwdValue = ref('')
 
 const _K = '30e32c7bfa7d24588696277a60efc034c396283d8584c01ccd99c184e1dd68e4'
 const _D = 'eyLlrrYiOnsibmFtZSI6Iumahua6kOWbvemZheWfjkTljLoiLCJsbmciOjEwOC45NTg0MzIsImxhdCI6MzQuMzc4NTQ2fSwi5YWs5Y+4Ijp7Im5hbWUiOiLms7DljY7Ct+mHkei0uOWbvemZhSIsImxuZyI6MTA4Ljg4NjY0NCwibGF0IjozNC4yMjQ2MTV9fQ=='
-function _decode() { try { return JSON.parse(atob(_D)) } catch(e) { return {} } }
+function _decode() { try { const b=atob(_D);const u=new Uint8Array(b.length);for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);return JSON.parse(new TextDecoder().decode(u)) } catch(e) { return {} } }
 async function checkPassword() {
   const enc = new TextEncoder()
   const hashBuf = await crypto.subtle.digest('SHA-256', enc.encode(pwdValue.value))
