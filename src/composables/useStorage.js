@@ -42,3 +42,47 @@ export function deleteAddress(alias) {
 export function loadHistory() { try { return JSON.parse(localStorage.getItem(HK)) || [] } catch (e) { return [] } }
 export function saveHistory(e) { const h = loadHistory(); h.unshift({ ...e, date: new Date().toISOString() }); if (h.length > MH) h.length = MH; localStorage.setItem(HK, JSON.stringify(h)) }
 export function getRecentSectors(n = 5) { return loadHistory().slice(0, n).map(h => h.sector).filter(s => s !== undefined) }
+
+// === 途经点冷却追踪 localStorage ===
+const TK = 'radompath_waypoint_tracker'
+export function saveWaypointTracker(tracker) {
+  try {
+    const plain = tracker.map(w => ({ lng: w.lng, lat: w.lat, count: w.count, cooldown: w.cooldown }))
+    localStorage.setItem(TK, JSON.stringify(plain))
+  } catch(e) {}
+}
+export function loadWaypointTracker() {
+  try {
+    const raw = localStorage.getItem(TK)
+    if (raw) { const arr = JSON.parse(raw); if (Array.isArray(arr)) return arr.filter(w => w.lng != null && w.lat != null) }
+  } catch(e) {}
+  return []
+}
+
+// === 最后路线缓存：切到高德返回后恢复 ===
+const RK = 'radompath_last_route'
+export function saveLastRoute(data) {
+  try {
+    // 只存关键字段，polyline 数据量大但必要
+    const slim = {
+      type: data.type,
+      home: data.home, work: data.work,
+      waypoints: (data.waypoints || []).map(w => ({ lng: w.lng, lat: w.lat, poiName: w.poiName, name: w.name })),
+      segments: (data.segments || []).map(s => ({
+        from: s.from, to: s.to, distance: s.distance, duration: s.duration, polyline: s.polyline, idx: s.idx
+      })),
+      totalDistance: data.totalDistance, totalDuration: data.totalDuration,
+      sector: data.sector, totalClimb: data.totalClimb,
+      savedAt: Date.now()
+    }
+    localStorage.setItem(RK, JSON.stringify(slim))
+  } catch(e) {}
+}
+export function loadLastRoute() {
+  try {
+    const raw = localStorage.getItem(RK)
+    if (raw) return JSON.parse(raw)
+  } catch(e) {}
+  return null
+}
+export function clearLastRoute() { localStorage.removeItem(RK) }

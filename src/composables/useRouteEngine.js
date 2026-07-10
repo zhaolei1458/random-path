@@ -1,8 +1,50 @@
 import { haversine, getBearing, destinationPoint, sortWaypointsAlongCorridor, parsePolyline, samplePoints } from '../utils/math.js'
 import { fetchBicyclingRoute, reverseGeocode, searchPOIs, fetchBicyclingPaths } from './useAMap.js'
-import { getRecentSectors } from './useStorage.js'
+import { getRecentSectors, saveWaypointTracker, loadWaypointTracker } from './useStorage.js'
 
 export const MAX_WAYPOINTS = 10, MAX_RETRIES = 12, EARLY_ACCEPT_AFTER = 5
+
+// === 途经点冷却追踪 ===
+const HOT_RADIUS = 1500, HOT_THRESHOLD = 5, COOLDOWN_ROUNDS = 8, MAX_TRACKED = 80
+const waypointTracker = loadWaypointTracker()  // 从 localStorage 恢复
+
+function findHotCluster(lng, lat) {
+  for (const wt of waypointTracker) {
+    if (haversine({lng, lat}, {lng: wt.lng, lat: wt.lat}) < HOT_RADIUS) return wt
+  }
+  return null
+}
+
+export function recordWaypoints(waypoints) {
+  for (const wp of waypoints) {
+    const cluster = findHotCluster(wp.lng, wp.lat)
+    if (cluster) {
+      cluster.count++
+      if (cluster.count >= HOT_THRESHOLD) cluster.cooldown = COOLDOWN_ROUNDS
+    } else {
+      waypointTracker.push({ lng: wp.lng, lat: wp.lat, count: 1, cooldown: 0 })
+    }
+  }
+  while (waypointTracker.length > MAX_TRACKED) waypointTracker.shift()
+  saveWaypointTracker(waypointTracker)
+}
+
+export function isInCooldownZone(lng, lat) {
+  for (const wt of waypointTracker) {
+    if (wt.cooldown > 0 && haversine({lng, lat}, {lng: wt.lng, lat: wt.lat}) < HOT_RADIUS) return true
+  }
+  return false
+}
+
+function tickCooldown() {
+  let changed = false
+  for (const wt of waypointTracker) {
+    if (wt.cooldown > 0) { wt.cooldown--; changed = true }
+  }
+  if (changed) saveWaypointTracker(waypointTracker)
+}
+
+export function resetWaypointTracker() { waypointTracker.length = 0; saveWaypointTracker(waypointTracker) }
 
 function pickSector(mode, recent) {
   if (mode === 'mixed') { const s = Math.random() > 0.5 ? 1 : -1; return { sector: -1, dirSign: () => s } }
@@ -22,13 +64,19 @@ export function generateWaypoints(o, d, mode, recent, lastDist, minD, maxD) {
   const bl = sd * 1.35; const em = Math.max(minD, bl)
   const td = em + Math.random() * Math.max(0, maxD - em)
   const en = Math.max(0, td - bl); const opw = c > 0 ? (en / c) / 1.6 : 0
-  // 大幅降低偏移比例上限，避免途经点偏出主路过远导致折返
   const bc = Math.max(0.008, Math.min(0.08, opw / sd))
   for (let i = 0; i < c; i++) {
     const pr = (i + 1) / (c + 1); const cf = bc * (0.5 + Math.random() * 0.6)
     const od = Math.max(150, Math.min(2000, cf * sd))
     const mp = destinationPoint(o, sd * pr, bb)
-    wps.push(destinationPoint(mp, od, bb + 90 * sign))
+    let wp = destinationPoint(mp, od, bb + 90 * sign)
+    // 落在冷却区则随机偏移，最多尝试5次
+    let retries = 5
+    while (retries > 0 && isInCooldownZone(wp.lng, wp.lat)) {
+      wp = destinationPoint(mp, od * (0.7 + Math.random() * 1.2), bb + 90 * sign * (0.5 + Math.random() * 1.0))
+      retries--
+    }
+    wps.push(wp)
   }
   wps = sortWaypointsAlongCorridor(wps, o, d)
   return { waypoints: wps, sector }
@@ -152,6 +200,7 @@ export async function calcClimb(polyline) {
 export async function tryGenerateRoute(home, work, opts = {}) {
   const { sectorMode = 'mixed', minDist = 22000, maxDist = 50000, onTry = null } = opts
   const recent = getRecentSectors(5); let best = null, bestDiff = Infinity, lastDist = null
+  tickCooldown() // 每轮生成前冷却计数-1
 
   for (let a = 0; a < MAX_RETRIES; a++) {
     let wo
@@ -167,8 +216,8 @@ export async function tryGenerateRoute(home, work, opts = {}) {
 
       if (td <= maxDist) {
         const fixed = await tryFixDeadEnds(segs, waypoints, td, tt, home, work, maxDist, onTry, a, sector)
-        if (fixed && fixed.accepted) return fixed.route
-        if (a >= EARLY_ACCEPT_AFTER && fixed && fixed.route) { onTry?.(a+1, fixed.route.totalDistance, '提前接受'); return fixed.route }
+        if (fixed && fixed.accepted) { recordWaypoints(fixed.route.waypoints); return fixed.route }
+        if (a >= EARLY_ACCEPT_AFTER && fixed && fixed.route) { onTry?.(a+1, fixed.route.totalDistance, '提前接受'); recordWaypoints(fixed.route.waypoints); return fixed.route }
         const rt = (fixed && fixed.route) ? fixed.route : { waypoints, segments: segs, totalDistance: td, totalDuration: tt, sector }
         const diff = maxDist - rt.totalDistance
         if (diff < bestDiff) { bestDiff = diff; best = rt }
@@ -182,6 +231,7 @@ export async function tryGenerateRoute(home, work, opts = {}) {
   }
 
   if (best) {
+    recordWaypoints(best.waypoints)
     const bt = checkBacktrack(best.segments)
     let climb = null
     try { const allPoly = best.segments.map(s => s.polyline).filter(Boolean).join(';'); climb = await calcClimb(allPoly) } catch(e) {}

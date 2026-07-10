@@ -2,7 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { haversine } from '../utils/math.js'
 import { geocode } from '../composables/useAMap.js'
-import { loadAddresses, saveAddresses, deleteAddress, saveHistory } from '../composables/useStorage.js'
+import { loadAddresses, saveAddresses, deleteAddress, saveHistory, saveLastRoute, loadLastRoute } from '../composables/useStorage.js'
 import { useSuggest } from '../composables/useAutoComplete.js'
 import { tryGenerateRoute, MAX_RETRIES, nameWaypoint, buildNavUrl, openNavigation, buildGPX, calcCalories } from '../composables/useRouteEngine.js'
 import { rateDifficulty } from '../composables/useScoring.js'
@@ -26,6 +26,16 @@ const workObj = computed(() => { const l = parseFloat(to.value.lng), a = parseFl
 onMounted(() => {
   if (addresses['家']) { from.value = { name: addresses['家'].name, lng: addresses['家'].lng, lat: addresses['家'].lat } }
   if (addresses['公司']) { to.value = { name: addresses['公司'].name, lng: addresses['公司'].lng, lat: addresses['公司'].lat } }
+  // 恢复上次路线
+  const last = loadLastRoute()
+  if (last && last.type === 'commute' && last.home && last.work) {
+    from.value = { name: last.home.name, lng: String(last.home.lng), lat: String(last.home.lat) }
+    to.value = { name: last.work.name, lng: String(last.work.lng), lat: String(last.work.lat) }
+    if (last.sectorMode) sectorMode.value = last.sectorMode
+    if (last.maxKm) maxKm.value = last.maxKm
+    result.value = { waypoints: last.waypoints || [], segments: last.segments || [], totalDistance: last.totalDistance, totalDuration: last.totalDuration, sector: last.sector, totalClimb: last.totalClimb }
+    resultShow.value = true
+  }
 })
 
 function onNameInput(target) { activeSuggest.value = target; searchAddress(target === 'from' ? from.value.name : to.value.name) }
@@ -75,6 +85,8 @@ async function doGenerate(isRetry = false) {
     progress.value = 100; await new Promise(r => setTimeout(r, 200))
     result.value = route; resultShow.value = true; loading.value = false
     saveHistory({ type: 'commute', home: h.name, work: w.name, distance: route.totalDistance, sector: route.sector, waypoints: route.waypoints.map(w => ({ lng: w.lng, lat: w.lat, name: w.poiName })) })
+    // 保存最后路线到本地，切到高德返回后自动恢复
+    saveLastRoute({ type: 'commute', home: h, work: w, waypoints: route.waypoints, segments: route.segments, totalDistance: route.totalDistance, totalDuration: route.totalDuration, sector: route.sector, totalClimb: route.totalClimb, sectorMode: sectorMode.value, maxKm: maxKm.value })
   } catch (e) { toast('错误: ' + e.message, 'err'); loading.value = false }
 }
 

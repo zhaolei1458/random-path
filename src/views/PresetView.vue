@@ -1,6 +1,6 @@
 <script setup>
-import { ref, computed, nextTick } from 'vue'
-import { loadAddresses } from '../composables/useStorage.js'
+import { ref, computed, nextTick, onMounted } from 'vue'
+import { loadAddresses, saveLastRoute, loadLastRoute } from '../composables/useStorage.js'
 import { fetchBicyclingRoute } from '../composables/useAMap.js'
 import { rateDifficulty } from '../composables/useScoring.js'
 import { useSuggest } from '../composables/useAutoComplete.js'
@@ -241,9 +241,29 @@ async function generate() {
     progress.value = 100; await new Promise(r => setTimeout(r, 200))
     result.value = { waypoints: wps, segments: segs, totalDistance: td, totalDuration: tt, sector: -1, totalClimb: null }
     resultShow.value = true
+    // 保存最后路线到本地
+    const route = activeRoute.value
+    const start = customStart.value.name && customStart.value.lng ? { name: customStart.value.name, lng: parseFloat(customStart.value.lng), lat: parseFloat(customStart.value.lat) } : route.start
+    saveLastRoute({ type: 'preset', presetKey: selectedKey.value, home: start, work: route.end, waypoints: wps, segments: segs, totalDistance: td, totalDuration: tt, sector: -1, totalClimb: null })
   } catch (e) { toast('错误: ' + e.message, 'err') }
   loading.value = false
 }
+
+// 恢复上次路线
+onMounted(() => {
+  const last = loadLastRoute()
+  if (last && last.type === 'preset' && last.presetKey) {
+    selectedKey.value = last.presetKey
+    onPresetChange()
+    if (last.home && last.home.name !== activeRoute.value?.start?.name) {
+      customStart.value = { name: last.home.name, lng: String(last.home.lng), lat: String(last.home.lat) }
+    }
+    nextTick(() => {
+      result.value = { waypoints: last.waypoints || [], segments: last.segments || [], totalDistance: last.totalDistance, totalDuration: last.totalDuration, sector: last.sector, totalClimb: last.totalClimb }
+      resultShow.value = true
+    })
+  }
+})
 </script>
 
 <template>
