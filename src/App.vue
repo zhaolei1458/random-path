@@ -3,9 +3,9 @@ import { ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 const router = useRouter(), route = useRoute()
 const tabs = [
-  { key: 'commute', label: '🎲 随机通勤' },
-  { key: 'loop', label: '🔄 环线骑行' },
-  { key: 'preset', label: '🗺 经典路线' },
+  { key: 'commute', label: '🗺 路线发现' },
+  { key: 'loop', label: '🧭 环线设计' },
+  { key: 'preset', label: '📚 经典路线' },
 ]
 const toast = ref({ show: false, msg: '', type: '' }); let tt = null
 function showToast(msg, type = '') { toast.value = { show: true, msg, type }; clearTimeout(tt); tt = setTimeout(() => { toast.value.show = false }, 2200) }
@@ -86,4 +86,21 @@ footer{text-align:center;padding:16px;color:#8cb8a8;font-size:10px;font-weight:5
 .slope-badge.steep{color:#dc2626}
 .slope-data{font-weight:600;color:#5e5468;white-space:nowrap}
 .slope-grade{color:#a898b8;font-size:10px;white-space:nowrap;margin-left:auto}
+/* 方向/时长 chips */
+.compass-row{display:flex;flex-wrap:wrap;gap:4px}
+.chip{border:2px solid #e5dcec;border-radius:10px;padding:6px 10px;font-size:11px;font-weight:600;background:#fff;color:#8a7a98;cursor:pointer;transition:all .2s;white-space:nowrap}
+.chip.active{background:linear-gradient(135deg,#f08ca4,#e27790);color:#fff;border-color:#f08ca4;box-shadow:0 2px 8px rgba(240,140,164,0.25)}
+.chip:active{transform:scale(.94)}
+.time-chips{display:flex;gap:4px;flex-wrap:wrap}
+/* 罗盘网格 */
+.compass-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;max-width:240px;margin:0 auto}
+.compass-btn{border:2px solid #e5dcec;border-radius:12px;padding:10px 4px;font-size:13px;font-weight:600;background:#fff;color:#8a7a98;cursor:pointer;transition:all .2s;text-align:center}
+.compass-btn.center{font-size:16px;padding:12px 4px}
+.compass-btn.active{background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border-color:#6366f1;box-shadow:0 2px 10px rgba(99,102,241,0.3);transform:scale(1.05)}
+.compass-btn:active{transform:scale(.92)}
+/* 多路线卡片 */
+.multi-cards{display:flex;gap:8px;overflow-x:auto;padding:4px 0;margin-bottom:12px;-webkit-overflow-scrolling:touch;scroll-snap-type:x mandatory}
+.multi-card{flex:0 0 85%;scroll-snap-align:start;background:#fff;border-radius:14px;padding:10px;border:2px solid #f2eaf4;cursor:pointer;transition:all .2s}
+.multi-card.active{border-color:#6366f1;box-shadow:0 0 0 3px rgba(99,102,241,0.1)}
+.multi-card .route-thumb{width:100%}
 </style>

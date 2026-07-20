@@ -3,6 +3,20 @@ import { fetchBicyclingRoute, reverseGeocode, searchPOIs, fetchBicyclingPaths, l
 import { getRecentSectors, saveWaypointTracker, loadWaypointTracker } from './useStorage.js'
 
 export const MAX_WAYPOINTS = 10, MAX_RETRIES = 12, EARLY_ACCEPT_AFTER = 5
+export const BIKE_SPEED = 18 // km/h，休闲骑行速度，用于时间↔距离换算
+
+// === 罗盘方向常量 ===
+export const COMPASS = [
+  { key:'random', label:'🎲 随机', deg:null },
+  { key:'N', label:'↑ 北', deg:0 },
+  { key:'NE', label:'↗ 东北', deg:45 },
+  { key:'E', label:'→ 东', deg:90 },
+  { key:'SE', label:'↘ 东南', deg:135 },
+  { key:'S', label:'↓ 南', deg:180 },
+  { key:'SW', label:'↙ 西南', deg:225 },
+  { key:'W', label:'← 西', deg:270 },
+  { key:'NW', label:'↖ 西北', deg:315 },
+]
 
 // === 途经点冷却追踪 ===
 const HOT_RADIUS = 1500, HOT_THRESHOLD = 5, COOLDOWN_ROUNDS = 8, MAX_TRACKED = 80
@@ -94,6 +108,37 @@ export function generateLoopWaypoints(c, tk, lastDist, minD, maxD) {
   }
   wps.sort((a, b) => getBearing(c, a) - getBearing(c, b))
   return { waypoints: wps, sector: -1 }
+}
+
+// === 罗盘环线生成：从起点往某个方向绕一圈回来 ===
+export function generateCompassLoop(start, targetDist, bearingDeg) {
+  const dir = bearingDeg != null ? bearingDeg : Math.random() * 360
+  const n = 3 + Math.floor(Math.random() * 4) // 3-6 个途经点
+  const farDist = targetDist * 0.38 // 最远点距起点
+  const wps = []
+  // 往选定方向偏置，形成弧线环
+  for (let i = 0; i < n; i++) {
+    const progress = (i + 1) / (n + 1)
+    // 角度从 dir-130° 弧线到 dir+130°，加随机抖动
+    const angle = (dir - 130 + (260 * progress) + (Math.random() - 0.5) * 35 + 360) % 360
+    const d = farDist * (0.55 + Math.random() * 0.9) * (1 - Math.abs(progress - 0.5) * 0.7)
+    wps.push(destinationPoint(start, Math.max(800, d), angle))
+  }
+  wps.sort((a, b) => getBearing(start, a) - getBearing(start, b))
+  return { waypoints: wps, sector: -1 }
+}
+
+// === 并发生成多条路线 ===
+export async function generateMultipleRoutes(home, work, opts, count = 3) {
+  const tasks = []
+  for (let i = 0; i < count; i++) {
+    tasks.push(tryGenerateRoute(home, work, {
+      ...opts,
+      onTry: opts.onTry ? (...a) => opts.onTry(i, ...a) : null,
+    }))
+  }
+  const results = await Promise.allSettled(tasks)
+  return results.filter(r => r.status === 'fulfilled' && r.value).map(r => r.value)
 }
 
 function detourRatio(seg) {
@@ -357,13 +402,22 @@ export async function calcSlopeProfile(segments) {
 }
 
 export async function tryGenerateRoute(home, work, opts = {}) {
-  const { sectorMode = 'mixed', minDist = 22000, maxDist = 50000, onTry = null } = opts
+  const { sectorMode = 'mixed', directionDeg = null, minDist = 22000, maxDist = 50000, onTry = null } = opts
   const recent = getRecentSectors(5); let best = null, bestDiff = Infinity, lastDist = null
-  tickCooldown() // 每轮生成前冷却计数-1
+  tickCooldown()
 
   for (let a = 0; a < MAX_RETRIES; a++) {
     let wo
     if (opts.waypointGenerator) wo = opts.waypointGenerator(lastDist, minDist, maxDist)
+    else if (directionDeg != null) {
+      // 有方向偏好：偏向指定罗盘方向
+      const bb = getBearing(home, work), sd = haversine(home, work)
+      const diff = ((directionDeg - bb + 540) % 360) - 180 // -180~180
+      const sign = diff > 0 ? 1 : -1
+      const strength = Math.min(1, Math.abs(diff) / 90)
+      const mode = sign > 0 ? (strength > 0.5 ? 3 : 2) : (strength > 0.5 ? 0 : 1)
+      wo = generateWaypoints(home, work, mode, recent, lastDist, minDist, maxDist)
+    }
     else wo = generateWaypoints(home, work, sectorMode, recent, lastDist, minDist, maxDist)
     let { waypoints, sector } = wo
     const pts = [home, ...waypoints, work]
