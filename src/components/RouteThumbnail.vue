@@ -4,7 +4,8 @@ import { parsePolyline } from '../utils/math.js'
 
 const props = defineProps({
   segments: Array, waypoints: Array, home: Object, work: Object,
-  supplyPoints: Array, highlightIndex: { type: Number, default: -1 }
+  supplyPoints: Array, highlightIndex: { type: Number, default: -1 },
+  uphillSections: Array, // { startCoord, endCoord, avgGrade, maxGrade }[]
 })
 const emit = defineEmits(['supply-click'])
 
@@ -101,6 +102,25 @@ function draw(flashInfo = { index: -1, flash: 0 }) {
     ctx.strokeStyle = '#f08ca4'; ctx.lineWidth = 3
     ctx.beginPath(); ctx.moveTo(tx(pts[0].lng), ty(pts[0].lat)); for (let i = 1; i < pts.length; i++) ctx.lineTo(tx(pts[i].lng), ty(pts[i].lat)); ctx.stroke()
   })
+
+  // uphill overlays — 坡度≥8%红色，5-8%橙色
+  if (props.uphillSections && props.uphillSections.length > 0) {
+    for (const sec of props.uphillSections) {
+      if (!sec.startCoord || !sec.endCoord) continue
+      const grade = sec.avgGrade || sec.maxGrade || 5
+      const color = grade >= 8 ? 'rgba(239,68,68,0.7)' : 'rgba(249,115,22,0.6)'
+      const lw = grade >= 8 ? 7 : 5
+      ctx.strokeStyle = color; ctx.lineWidth = lw; ctx.lineCap = 'round'
+      ctx.beginPath()
+      ctx.moveTo(tx(sec.startCoord.lng), ty(sec.startCoord.lat))
+      ctx.lineTo(tx(sec.endCoord.lng), ty(sec.endCoord.lat))
+      ctx.stroke()
+      const mx = tx((sec.startCoord.lng + sec.endCoord.lng) / 2)
+      const my = ty((sec.startCoord.lat + sec.endCoord.lat) / 2)
+      ctx.fillStyle = '#fff'; ctx.font = 'bold 8px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'
+      ctx.fillText('↗' + Math.round(grade) + '%', mx, my - 2)
+    }
+  }
 
   // waypoints
   if (props.waypoints) props.waypoints.forEach((w, i) => {

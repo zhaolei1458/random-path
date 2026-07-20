@@ -197,6 +197,123 @@ export async function calcClimb(polyline) {
   return Math.round(climb)
 }
 
+// === 坡度分析：沿路线采样高程并识别上坡路段 ===
+const UPHILL_MIN_GRADE = 5 // 坡度阈值：5%（约2.86°），低于此坡度不显示
+const UPHILL_MIN_LENGTH = 0.1 // 最短上坡路段：100m
+
+export async function calcSlopeProfile(segments) {
+  // 1. 收集所有 polyline 坐标并计算累计距离
+  const allCoords = []
+  for (const seg of segments) {
+    if (seg.polyline) allCoords.push(...parsePolyline(seg.polyline))
+  }
+  if (allCoords.length < 2) return null
+
+  const cumDist = [0]
+  for (let i = 1; i < allCoords.length; i++) {
+    cumDist.push(cumDist[i - 1] + haversine(allCoords[i - 1], allCoords[i]))
+  }
+  const totalDist = cumDist[cumDist.length - 1]
+  if (totalDist < 100) return null // 路线太短，不分析
+
+  // 2. 按距离均匀采样（每 ~400m 一个点，最少 15 最多 200）
+  const sampleCount = Math.max(15, Math.min(200, Math.ceil(totalDist / 400)))
+  const sampled = []
+  const sampledDists = []
+  let ci = 0
+  for (let i = 0; i < sampleCount; i++) {
+    const targetDist = (totalDist / (sampleCount - 1)) * i
+    while (ci < cumDist.length - 1 && cumDist[ci + 1] < targetDist) ci++
+    if (ci >= cumDist.length - 1) {
+      sampled.push(allCoords[allCoords.length - 1])
+      sampledDists.push(totalDist)
+    } else {
+      const segStart = cumDist[ci], segEnd = cumDist[ci + 1]
+      const t = segEnd > segStart ? (targetDist - segStart) / (segEnd - segStart) : 0
+      sampled.push({
+        lng: allCoords[ci].lng + (allCoords[ci + 1].lng - allCoords[ci].lng) * t,
+        lat: allCoords[ci].lat + (allCoords[ci + 1].lat - allCoords[ci].lat) * t,
+      })
+      sampledDists.push(targetDist)
+    }
+  }
+
+  // 3. 获取高程
+  const elevations = await queryElevations(sampled)
+  if (!elevations || elevations.length < 2) return null
+
+  // 4. 构建高程剖面 + 计算每段坡度
+  const profile = []
+  for (let i = 0; i < elevations.length; i++) {
+    const pt = {
+      dist: sampledDists[i],
+      ele: elevations[i],
+      lng: sampled[i].lng,
+      lat: sampled[i].lat,
+    }
+    if (i > 0) {
+      const segDist = pt.dist - profile[i - 1].dist
+      const eleDiff = pt.ele - profile[i - 1].ele
+      pt.grade = segDist > 0 ? (eleDiff / segDist) * 100 : 0
+      pt.eleDiff = eleDiff
+    } else {
+      pt.grade = 0
+      pt.eleDiff = 0
+    }
+    profile.push(pt)
+  }
+
+  // 5. 识别上坡路段（连续 grade >= UPHILL_MIN_GRADE 的点合并为一个路段）
+  const uphillSections = []
+  let cur = null
+
+  function flushSection() {
+    if (!cur) return
+    const climb = cur.eleGains.filter(g => g > 0).reduce((a, b) => a + b, 0)
+    const lengthKm = (cur.endDist - cur.startDist) / 1000
+    if (lengthKm >= UPHILL_MIN_LENGTH) {
+      uphillSections.push({
+        startDist: Math.round(cur.startDist / 100) / 10,   // km，保留1位小数
+        endDist: Math.round(cur.endDist / 100) / 10,
+        length: Math.round(lengthKm * 10) / 10,
+        climb: Math.round(climb),
+        avgGrade: Math.round(cur.grades.reduce((a, b) => a + b, 0) / cur.grades.length * 10) / 10,
+        maxGrade: Math.round(Math.max(...cur.grades) * 10) / 10,
+        startCoord: cur.startCoord,
+        endCoord: cur.endCoord,
+      })
+    }
+    cur = null
+  }
+
+  for (let i = 1; i < profile.length; i++) {
+    if (profile[i].grade >= UPHILL_MIN_GRADE) {
+      if (!cur) {
+        cur = {
+          startDist: profile[i - 1].dist,
+          startCoord: { lng: profile[i - 1].lng, lat: profile[i - 1].lat },
+          grades: [],
+          eleGains: [],
+          endDist: 0,
+          endCoord: null,
+        }
+      }
+      cur.grades.push(profile[i].grade)
+      cur.eleGains.push(profile[i].eleDiff)
+      cur.endDist = profile[i].dist
+      cur.endCoord = { lng: profile[i].lng, lat: profile[i].lat }
+    } else {
+      flushSection()
+    }
+  }
+  flushSection()
+
+  // 6. 计算总爬升
+  const totalClimb = Math.round(profile.reduce((s, p) => s + (p.eleDiff > 0 ? p.eleDiff : 0), 0))
+
+  return { uphillSections, totalClimb, elevationProfile: profile }
+}
+
 export async function tryGenerateRoute(home, work, opts = {}) {
   const { sectorMode = 'mixed', minDist = 22000, maxDist = 50000, onTry = null } = opts
   const recent = getRecentSectors(5); let best = null, bestDiff = Infinity, lastDist = null
@@ -233,9 +350,9 @@ export async function tryGenerateRoute(home, work, opts = {}) {
   if (best) {
     recordWaypoints(best.waypoints)
     const bt = checkBacktrack(best.segments)
-    let climb = null
-    try { const allPoly = best.segments.map(s => s.polyline).filter(Boolean).join(';'); climb = await calcClimb(allPoly) } catch(e) {}
-    return { ...best, totalClimb: climb, hasBacktrack: bt.bad }
+    let slopeProfile = null
+    try { slopeProfile = await calcSlopeProfile(best.segments) } catch(e) {}
+    return { ...best, totalClimb: slopeProfile?.totalClimb ?? null, uphillSections: slopeProfile?.uphillSections ?? [], hasBacktrack: bt.bad }
   }
   return null
 }

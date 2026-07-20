@@ -17,7 +17,7 @@ router.isReady().then(() => { window.$toast = showToast })
   <nav class="tab-bar"><button v-for="t in tabs" :key="t.key" :class="['tab-btn', { active: route.meta.tab === t.key }]" @click="router.push('/' + t.key)">{{ t.label }}</button></nav>
   <router-view />
   <div :class="['toast', { show: toast.show }, toast.type]">{{ toast.msg }}</div>
-  <footer>RandomPath · 高程数据来自高德地图 & Open-Meteo</footer>
+  <footer>RandomPath v2.1 · 高程数据来自高德地图 & Open-Meteo</footer>
 </div>
 </template>
 <style>
@@ -71,4 +71,13 @@ footer{text-align:center;padding:16px;color:#8cb8a8;font-size:10px;font-weight:5
 .supply-chip.active,.supply-chip:active{background:#7c3aed;color:#fff;border-color:#7c3aed;transform:scale(1.05)}
 .btn-supply{background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff;box-shadow:0 3px 12px rgba(124,58,237,0.3);margin-bottom:8px}
 .btn-supply:disabled{opacity:.5;pointer-events:none}
+.uphill-box{margin-top:10px;padding:10px 12px;background:linear-gradient(135deg,#fff7ed,#fef2f2);border-radius:10px;border:1px solid #fed7aa}
+.uphill-title{font-size:12px;font-weight:700;color:#c2410c;margin-bottom:6px}
+.uphill-item{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px dashed #fce4d0;font-size:11px}
+.uphill-item:last-child{border-bottom:none}
+.uphill-badge{font-weight:700;white-space:nowrap;font-size:11px}
+.uphill-badge.moderate{color:#ea580c}
+.uphill-badge.steep{color:#dc2626}
+.uphill-data{font-weight:600;color:#5e5468;white-space:nowrap}
+.uphill-grade{color:#a898b8;font-size:10px;white-space:nowrap;margin-left:auto}
 </style>

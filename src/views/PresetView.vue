@@ -4,7 +4,7 @@ import { loadAddresses, saveLastRoute, loadLastRoute } from '../composables/useS
 import { fetchBicyclingRoute } from '../composables/useAMap.js'
 import { rateDifficulty } from '../composables/useScoring.js'
 import { useSuggest } from '../composables/useAutoComplete.js'
-import { nameWaypoint, buildNavUrl, openNavigation, buildGPX, calcCalories } from '../composables/useRouteEngine.js'
+import { nameWaypoint, buildNavUrl, openNavigation, buildGPX, calcCalories, calcSlopeProfile } from '../composables/useRouteEngine.js'
 import { generateShareImage, shareImage } from '../composables/useShareCard.js'
 import RouteThumbnail from '../components/RouteThumbnail.vue'
 
@@ -252,11 +252,17 @@ async function generate() {
     const wps = pts.slice(1, -1)
     if (wps.length > 0) { tryInfo.value = '正在获取途经点地名…'; await Promise.all(wps.map(async (wp) => { wp.poiName = await nameWaypoint(wp.lng, wp.lat) })) }
     progress.value = 100; await new Promise(r => setTimeout(r, 200))
-    result.value = { waypoints: wps, segments: segs, totalDistance: td, totalDuration: tt, sector: -1, totalClimb: null }
+    let uphillSections = [], totalClimb = null
+    try {
+      tryInfo.value = '正在分析坡度…'
+      const sp = await calcSlopeProfile(segs)
+      if (sp) { uphillSections = sp.uphillSections; totalClimb = sp.totalClimb }
+    } catch(e) {}
+    result.value = { waypoints: wps, segments: segs, totalDistance: td, totalDuration: tt, sector: -1, totalClimb, uphillSections }
     resultShow.value = true
     // 保存最后路线到本地
     const po = presetObj.value
-    saveLastRoute({ type: 'preset', presetKey: selectedKey.value, home: po.start, work: po.end, waypoints: wps, segments: segs, totalDistance: td, totalDuration: tt, sector: -1, totalClimb: null })
+    saveLastRoute({ type: 'preset', presetKey: selectedKey.value, home: po.start, work: po.end, waypoints: wps, segments: segs, totalDistance: td, totalDuration: tt, sector: -1, totalClimb, uphillSections })
   } catch (e) { toast('错误: ' + e.message, 'err') }
   loading.value = false
 }
@@ -348,8 +354,8 @@ onMounted(() => {
       <div class="stat"><div class="val">{{ Math.round(result.totalDuration/60) }}</div><div class="lbl">预计 分钟</div></div>
       <div class="stat"><div class="val small" :style="{color:diffObj?.color}">{{ diffObj?.label }}</div><div class="lbl">难度</div></div>
     </div>
-    <RouteThumbnail :segments="result.segments" :waypoints="result.waypoints" :supplyPoints="supplyPoints" :highlightIndex="highlightSupply" :home="fullPoints[0]" :work="fullPoints[fullPoints.length-1]" @supply-click="onSupplyMarkerClick" />
-    <div class="route-thumb-legend"><span>🟢 起点</span><span>🟠 终点</span><span>🔵 途经点</span><span>🟣 补给点</span><span>⬆ 北</span></div>
+    <RouteThumbnail :segments="result.segments" :waypoints="result.waypoints" :supplyPoints="supplyPoints" :highlightIndex="highlightSupply" :home="fullPoints[0]" :work="fullPoints[fullPoints.length-1]" :uphillSections="result.uphillSections" @supply-click="onSupplyMarkerClick" />
+    <div class="route-thumb-legend"><span>🟢 起点</span><span>🟠 终点</span><span>🔵 途经点</span><span>🟣 补给点</span><span>🟠🔴 上坡</span><span>⬆ 北</span></div>
     <div class="route-summary"><strong>{{ fullPoints[0]?.name }}</strong> → {{ result.waypoints.map((w,i) => w.poiName || w.name || '途经点'+(i+1)).join(' → ') || '直达' }} → <strong>{{ fullPoints[fullPoints.length-1]?.name }}</strong></div>
     <div class="collapse-toggle" :class="{open:collapseOpen}" @click="collapseOpen=!collapseOpen"><span class="arrow">▶</span> 详细数据</div>
     <div class="collapse-body" :class="{open:collapseOpen}">
@@ -362,6 +368,14 @@ onMounted(() => {
       <div v-if="supplyPoints.length" style="margin-top:12px;border-top:1px dashed #ece0ec;padding-top:10px">
         <div style="font-size:12px;font-weight:700;color:#5e5468;margin-bottom:6px">💧 沿途补给点 ({{ supplyPoints.length }})</div>
         <div class="supply-chips"><span v-for="(sp, i) in supplyPoints" :key="i" class="supply-chip" :class="{active: highlightSupply===i}" :title="sp.type" @click="onSupplyChipClick(i)">{{ sp.catLabel?.slice(0,2) || '📍' }} {{ sp.name }}</span></div>
+      </div>
+      <div v-if="result.uphillSections?.length" class="uphill-box" style="margin-top:12px;border-top:1px dashed #ece0ec;padding-top:10px">
+        <div class="uphill-title">📈 上坡路段 (坡度≥5%)</div>
+        <div class="uphill-item" v-for="(sec, i) in result.uphillSections" :key="i">
+          <span class="uphill-badge" :class="sec.avgGrade >= 8 ? 'steep' : 'moderate'">{{ sec.avgGrade >= 8 ? '🔴' : '🟠' }} 第{{ i+1 }}段</span>
+          <span class="uphill-data">{{ sec.length }} km ↗ {{ sec.climb }}m</span>
+          <span class="uphill-grade">均{{ sec.avgGrade }}% / 最{{ sec.maxGrade }}%</span>
+        </div>
       </div>
     </div>
     <button class="btn btn-supply" @click="searchSupply" :disabled="supplyLoading">
