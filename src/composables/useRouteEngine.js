@@ -179,23 +179,35 @@ async function tryFixDeadEnds(segments, waypoints, td, tt, home, work, maxDist, 
 
 export async function queryElevations(points) {
   if (points.length === 0) return []
+  const BATCH = 50
+  const allResults = []
   try {
+    // 确保 SDK 和 Elevation 插件都已加载
     await loadAMapSDK()
-    const BATCH = 50
-    const allResults = []
+    await new Promise((resolve, reject) => {
+      if (!window.AMap) return reject(new Error('AMap SDK not loaded'))
+      AMap.plugin('AMap.Elevation', () => resolve(), { retry: 3 })
+    })
     for (let i = 0; i < points.length; i += BATCH) {
-      const batch = points.slice(i, i + BATCH).map(p => [p.lng, p.lat])
+      const batch = points.slice(i, i + BATCH).map(p => new AMap.LngLat(p.lng, p.lat))
       const result = await new Promise((resolve, reject) => {
         const el = new AMap.Elevation()
         el.getElevation(batch, (status, res) => {
           if (status === 'complete') resolve(res)
-          else reject(new Error('Elevation SDK failed: ' + status))
+          else reject(new Error(status))
         })
       })
-      for (const r of result) allResults.push((r.elevation != null ? r.elevation : r.z) || 0)
+      for (const r of result) {
+        allResults.push(typeof r.elevation === 'number' ? r.elevation : (parseFloat(r.z) || 0))
+      }
     }
     return allResults
-  } catch(e) { console.error('[queryElevations]', e); return [] }
+  } catch(e) {
+    const msg = e?.message || String(e)
+    console.error('[queryElevations]', msg)
+    if (window.$toast) window.$toast('高程查询失败: ' + msg, 'warn')
+    return []
+  }
 }
 
 export async function calcClimb(polyline) {
@@ -378,7 +390,14 @@ export async function tryGenerateRoute(home, work, opts = {}) {
     recordWaypoints(best.waypoints)
     const bt = checkBacktrack(best.segments)
     let slopeProfile = null
-    try { slopeProfile = await calcSlopeProfile(best.segments) } catch(e) {}
+    try { slopeProfile = await calcSlopeProfile(best.segments) } catch(e) { console.error('[tryGenerateRoute] slope calc failed:', e) }
+    if (slopeProfile) {
+      const nu = slopeProfile.uphillSections?.length || 0
+      const nd = slopeProfile.downhillSections?.length || 0
+      if (nu + nd > 0 && window.$toast) window.$toast(`坡度分析完成: ${nu}段上坡, ${nd}段下坡`)
+    } else if (window.$toast) {
+      window.$toast('坡度分析未成功，请重试', 'warn')
+    }
     return { ...best, totalClimb: slopeProfile?.totalClimb ?? null, uphillSections: slopeProfile?.uphillSections ?? [], downhillSections: slopeProfile?.downhillSections ?? [], hasBacktrack: bt.bad }
   }
   return null
